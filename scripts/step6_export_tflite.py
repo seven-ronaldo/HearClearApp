@@ -52,7 +52,13 @@ def export_tflite():
         converter.optimizations = [tf.lite.Optimize.DEFAULT]
 
         print("⏳ Đang convert sang TFLite...")
-        tflite_model = converter.convert()
+        try:
+            tflite_model = converter.convert()
+        except Exception as e:
+            print("❌ Lỗi khi convert TFLite:")
+            traceback.print_exc()
+            return
+
         print("✅ Convert thành công.")
 
         # Lưu file
