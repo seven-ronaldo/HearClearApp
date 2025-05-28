@@ -14,7 +14,8 @@ class CTCModel(tf.keras.Model):
         self.val_loss_tracker = tf.keras.metrics.Mean(name="val_loss")
 
     def compile(self, optimizer):
-        super().compile(optimizer=optimizer)
+        super().compile()
+        self.optimizer = optimizer
 
     def call(self, inputs, training=False):
         return self.model(inputs, training=training)
@@ -26,7 +27,7 @@ class CTCModel(tf.keras.Model):
         label_len = tf.cast(tf.squeeze(label_len), tf.int32)
 
         with tf.GradientTape() as tape:
-            logits = self.model(features, training=True)
+            logits = self(features, training=True)
             logits_time_major = tf.transpose(logits, [1, 0, 2])
             loss = tf.nn.ctc_loss(
                 labels=labels,
@@ -40,9 +41,9 @@ class CTCModel(tf.keras.Model):
 
         tf.debugging.check_numerics(loss, "Loss is NaN hoặc Inf")
 
-        gradients = tape.gradient(loss, self.model.trainable_variables)
+        gradients = tape.gradient(loss, self.trainable_variables)
         gradients = [tf.clip_by_norm(g, 5.0) for g in gradients]
-        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
         self.loss_tracker.update_state(loss)
         return {"loss": self.loss_tracker.result()}
 
@@ -52,7 +53,7 @@ class CTCModel(tf.keras.Model):
         input_len = tf.cast(tf.squeeze(input_len), tf.int32)
         label_len = tf.cast(tf.squeeze(label_len), tf.int32)
 
-        logits = self.model(features, training=False)
+        logits = self(features, training=False)
         logits_time_major = tf.transpose(logits, [1, 0, 2])
         loss = tf.nn.ctc_loss(
             labels=labels,
@@ -96,17 +97,20 @@ if __name__ == "__main__":
 
     ctc_model = CTCModel(base_model)
 
+    # Dummy forward để build model
     dummy_input = tf.random.uniform((1, 1000, 128))
     _ = ctc_model(dummy_input)
 
     ctc_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4))
 
     os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("exported", exist_ok=True)
+
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             filepath="checkpoints/best_model.weights.h5",
             save_best_only=True,
-            save_weights_only=True,  # <-- chỉ lưu weights
+            save_weights_only=True,
             monitor="val_loss",
             mode="min",
             verbose=1,
@@ -131,22 +135,9 @@ if __name__ == "__main__":
         callbacks=callbacks,
     )
 
-    # Sau khi train xong, có thể lưu lại kiến trúc + weights nếu muốn
-    # Hoặc chỉ cần dùng weights để load lại ở bước export .tflite
+    # ✅ Save weights & full model
+    ctc_model.save_weights("checkpoints/final_model.weights.h5")
+    print("✅ Đã lưu weights vào checkpoints/final_model.weights.h5")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    tf.saved_model.save(ctc_model.model, "exported/full_model")
+    print("✅ Đã lưu mô hình dạng SavedModel vào exported/full_model")
