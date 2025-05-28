@@ -27,7 +27,7 @@ class CTCModel(tf.keras.Model):
         label_len = tf.cast(tf.squeeze(label_len), tf.int32)
 
         with tf.GradientTape() as tape:
-            logits = self(features, training=True)
+            logits = self(features, training=True)  # gọi model call
             logits_time_major = tf.transpose(logits, [1, 0, 2])
             loss = tf.nn.ctc_loss(
                 labels=labels,
@@ -86,6 +86,7 @@ if __name__ == "__main__":
     char2idx = load_char2idx()
     vocab_size = len(char2idx)
 
+    # Khởi tạo model từ class build_ctc_transformer_model
     base_model = build_ctc_transformer_model(
         input_dim=128,
         vocab_size=vocab_size,
@@ -97,7 +98,7 @@ if __name__ == "__main__":
 
     ctc_model = CTCModel(base_model)
 
-    # Dummy forward để build model
+    # Dummy forward để build model trước khi compile
     dummy_input = tf.random.uniform((1, 1000, 128))
     _ = ctc_model(dummy_input)
 
@@ -135,9 +136,11 @@ if __name__ == "__main__":
         callbacks=callbacks,
     )
 
-    # ✅ Save weights & full model
+    # Lưu weights cuối cùng
     ctc_model.save_weights("checkpoints/final_model.weights.h5")
     print("✅ Đã lưu weights vào checkpoints/final_model.weights.h5")
 
+    # Lưu mô hình full để export TFLite hoặc phục vụ inference sau này
     tf.saved_model.save(ctc_model.model, "exported/full_model")
     print("✅ Đã lưu mô hình dạng SavedModel vào exported/full_model")
+
