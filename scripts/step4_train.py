@@ -12,7 +12,6 @@ class CTCModel(tf.keras.Model):
         self.model = model
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.val_loss_tracker = tf.keras.metrics.Mean(name="val_loss")
-
     def compile(self, optimizer):
         super().compile()
         self.optimizer = optimizer

@@ -62,7 +62,7 @@ class build_ctc_transformer_model(tf.keras.Model):
         ]
         self.output_dense = tf.keras.layers.Dense(vocab_size + 1)  # +1 for CTC blank
 
-    def compute_mask(self, inputs):
+    def compute_mask(self, inputs, mask=None):
         # Tạo mask dạng (B, T)
         mask = tf.reduce_any(tf.not_equal(inputs, 0.0), axis=-1)
         # Đưa về dạng attention mask (B, 1, 1, T)
