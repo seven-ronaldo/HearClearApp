@@ -24,14 +24,15 @@ def load_audio_mfcc(file_path, sample_rate=16000, n_mfcc=128, fixed_length=112):
 # ======== Hàm Greedy CTC decoding ========
 def ctc_greedy_decode(logits, blank_index=0):
     # logits shape: (1, T, vocab_size)
-    pred_ids = np.argmax(logits, axis=-1)[0]  # lấy sequence đầu tiên (T,)
+    probs = tf.nn.softmax(logits, axis=-1).numpy()
+    pred_ids = np.argmax(probs, axis=-1)[0]  # lấy sequence đầu tiên (T,)
     deduped = []
     prev = blank_index
     for idx in pred_ids:
         if idx != prev and idx != blank_index:
             deduped.append(idx)
         prev = idx
-    return [deduped]  # danh sách 1 sequence
+    return [deduped]
 
 # ======== Decode từ ID về văn bản ========
 def decode_to_text(decoded_ids, idx2char):

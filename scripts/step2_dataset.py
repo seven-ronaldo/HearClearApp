@@ -28,15 +28,15 @@ def data_generator_from_disk(index_list, processed_dir=PROCESSED_DIR):
             continue
 
 # ===================== TẠO DATASET THEO INDEX_LIST =====================
-def create_dataset_from_index_list(index_list, batch_size=BATCH_SIZE, buffer_size=BUFFER_SIZE, is_training=True):
+def create_dataset_from_index_list(index_list, batch_size=BATCH_SIZE, buffer_size=BUFFER_SIZE):
     if not index_list:
         raise ValueError("[ERROR] index_list rỗng, không thể tạo dataset.")
 
     output_signature = (
-        tf.TensorSpec(shape=(None, N_MELS), dtype=tf.float32),
-        tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        tf.TensorSpec(shape=(), dtype=tf.int32),
-        tf.TensorSpec(shape=(), dtype=tf.int32),
+        tf.TensorSpec(shape=(None, N_MELS), dtype=tf.float32),  # (time, n_mels)
+        tf.TensorSpec(shape=(None,), dtype=tf.int32),           # (label_len,)
+        tf.TensorSpec(shape=(), dtype=tf.int32),                # input_length
+        tf.TensorSpec(shape=(), dtype=tf.int32),                # label_length
     )
 
     dataset = tf.data.Dataset.from_generator(
@@ -44,10 +44,8 @@ def create_dataset_from_index_list(index_list, batch_size=BATCH_SIZE, buffer_siz
         output_signature=output_signature
     )
 
-    if is_training:
-        dataset = dataset.shuffle(buffer_size)
-        dataset = dataset.repeat()  # Chỉ repeat nếu là training
-
+    dataset = dataset.shuffle(buffer_size)
+    dataset = dataset.repeat()  # Lặp dataset vô hạn cho training
     dataset = dataset.padded_batch(
         batch_size=batch_size,
         padded_shapes=(
@@ -62,12 +60,11 @@ def create_dataset_from_index_list(index_list, batch_size=BATCH_SIZE, buffer_siz
             0,    # input_length
             0     # label_length
         ),
-        drop_remainder=is_training  # val giữ lại batch nhỏ nếu cần
+        drop_remainder=True
     )
 
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
     return dataset
-
 
 # ===================== LẤY DANH SÁCH INDEX =====================
 def get_data_index_list(processed_dir=PROCESSED_DIR):

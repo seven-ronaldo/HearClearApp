@@ -12,11 +12,13 @@ class CTCModel(tf.keras.Model):
         self.model = model
         self.loss_tracker = tf.keras.metrics.Mean(name="loss")
         self.val_loss_tracker = tf.keras.metrics.Mean(name="val_loss")
+
     def compile(self, optimizer):
-        super().compile()
+        super().compile(optimizer=optimizer)
         self.optimizer = optimizer
 
     def call(self, inputs, training=False):
+        # Forward pass wrapper: chuyển inputs qua base model
         return self.model(inputs, training=training)
 
     def train_step(self, data):
@@ -26,7 +28,7 @@ class CTCModel(tf.keras.Model):
         label_len = tf.cast(tf.squeeze(label_len), tf.int32)
 
         with tf.GradientTape() as tape:
-            logits = self(features, training=True)  # gọi model call
+            logits = self.model(features, training=True)
             logits_time_major = tf.transpose(logits, [1, 0, 2])
             loss = tf.nn.ctc_loss(
                 labels=labels,
@@ -40,9 +42,9 @@ class CTCModel(tf.keras.Model):
 
         tf.debugging.check_numerics(loss, "Loss is NaN hoặc Inf")
 
-        gradients = tape.gradient(loss, self.trainable_variables)
+        gradients = tape.gradient(loss, self.model.trainable_variables)
         gradients = [tf.clip_by_norm(g, 5.0) for g in gradients]
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
         self.loss_tracker.update_state(loss)
         return {"loss": self.loss_tracker.result()}
 
@@ -52,7 +54,7 @@ class CTCModel(tf.keras.Model):
         input_len = tf.cast(tf.squeeze(input_len), tf.int32)
         label_len = tf.cast(tf.squeeze(label_len), tf.int32)
 
-        logits = self(features, training=False)
+        logits = self.model(features, training=False)
         logits_time_major = tf.transpose(logits, [1, 0, 2])
         loss = tf.nn.ctc_loss(
             labels=labels,
@@ -85,7 +87,6 @@ if __name__ == "__main__":
     char2idx = load_char2idx()
     vocab_size = len(char2idx)
 
-    # Khởi tạo model từ class build_ctc_transformer_model
     base_model = build_ctc_transformer_model(
         input_dim=128,
         vocab_size=vocab_size,
@@ -97,20 +98,18 @@ if __name__ == "__main__":
 
     ctc_model = CTCModel(base_model)
 
-    # Dummy forward để build model trước khi compile
+    # Build model bằng dummy input (bắt buộc cho lưu model)
     dummy_input = tf.random.uniform((1, 1000, 128))
     _ = ctc_model(dummy_input)
 
     ctc_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4))
 
     os.makedirs("checkpoints", exist_ok=True)
-    os.makedirs("exported", exist_ok=True)
-
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
             filepath="checkpoints/best_model.weights.h5",
             save_best_only=True,
-            save_weights_only=True,
+            save_weights_only=True,  # Lưu full model
             monitor="val_loss",
             mode="min",
             verbose=1,

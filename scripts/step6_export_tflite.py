@@ -58,8 +58,8 @@ def export_tflite():
         # Convert sang TFLite
         print("🔄 Đang chuyển đổi sang định dạng .tflite...")
         converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter._experimental_lower_tensor_list_ops = True
+        #converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        #converter._experimental_lower_tensor_list_ops = True
         converter.experimental_enable_resource_variables = False
 
         tflite_model = converter.convert()

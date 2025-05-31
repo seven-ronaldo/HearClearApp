@@ -7,6 +7,8 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import jiwer
 import pandas as pd
+from collections import defaultdict
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 from step3_model import build_ctc_transformer_model
 from step4_train import CTCModel
@@ -39,7 +41,7 @@ def decode_label(label_seq, length, idx2char):
 
 # ========== Evaluation ==========
 
-def evaluate_model():
+def evaluate_model(max_samples=1024):
     print("🚀 Bắt đầu đánh giá mô hình...")
 
     # ===== Load dữ liệu =====
@@ -50,7 +52,6 @@ def evaluate_model():
     val_dataset = create_dataset_from_index_list(
         val_indices,
         batch_size=8,
-        is_training=False
     )
 
     # ===== Load từ điển =====
@@ -67,28 +68,24 @@ def evaluate_model():
         num_layers=4,
         ff_dim=256
     )
-    # Build base_model
-    dummy_input = tf.random.normal([1, 100, 128])
-    base_model(dummy_input)
+    base_model(tf.random.normal([1, 100, 128]))
 
     # ===== Tạo CTC Model =====
     model = CTCModel(base_model)
     model.compile(optimizer=tf.keras.optimizers.Adam(1e-4))
-
-    # ✅ Build model đúng cách
     model(tf.random.normal([1, 100, 128]))
 
     # ===== Load weights =====
     model_path = "checkpoints/best_model.weights.h5"
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"❌ Không tìm thấy weights: {model_path}")
-    
+
     model.load_weights(model_path)
     print(f"✅ Đã load weights từ {model_path}")
 
     # ===== Đánh giá =====
     val_loss = 0.0
-    preds_all, gts_all = [], []
+    preds_all, gts_all, lens_all = [], [], []
 
     for batch in val_dataset:
         features, labels, input_len, label_len = batch
@@ -108,8 +105,12 @@ def evaluate_model():
 
         preds_all.extend(pred_texts)
         gts_all.extend(label_texts)
+        lens_all.extend([len(x) for x in label_texts])
 
-        if len(preds_all) >= 100:
+        if len(preds_all) >= max_samples:
+            preds_all = preds_all[:max_samples]
+            gts_all = gts_all[:max_samples]
+            lens_all = lens_all[:max_samples]
             break
 
     avg_loss = val_loss / (len(preds_all) / 8)
@@ -119,7 +120,6 @@ def evaluate_model():
     print(f"\n✅ Validation Loss: {avg_loss:.4f}")
     print(f"📊 WER: {wer:.4f} | CER: {cer:.4f}\n")
 
-    # ===== Lưu kết quả =====
     result = {
         "timestamp": datetime.datetime.now().isoformat(),
         "val_loss": float(round(avg_loss, 4)),
@@ -133,37 +133,45 @@ def evaluate_model():
         f.write(json.dumps(result, ensure_ascii=False) + "\n")
 
     print("📁 Evaluation result appended to eval_history.jsonl ✅")
-    return result
 
-# ========== Plotting ==========
+    # ===== Phân tích sâu hơn =====
+    print("📉 Vẽ biểu đồ độ dài vs WER/CER...")
+    bin_size = 10
+    bins = defaultdict(lambda: [[], []])
+    for gt, pred, l in zip(gts_all, preds_all, lens_all):
+        wer_val = jiwer.wer([gt], [pred])
+        cer_val = jiwer.cer([gt], [pred])
+        bin_key = (l // bin_size) * bin_size
+        bins[bin_key][0].append(wer_val)
+        bins[bin_key][1].append(cer_val)
 
-def plot_eval_history(jsonl_path="eval_history.jsonl"):
-    if not os.path.exists(jsonl_path):
-        print("⚠️ Chưa có file lịch sử đánh giá.")
-        return
+    lengths = sorted(bins.keys())
+    avg_wer = [np.mean(bins[l][0]) for l in lengths]
+    avg_cer = [np.mean(bins[l][1]) for l in lengths]
 
-    df = pd.read_json(jsonl_path, lines=True)
-    if len(df) < 2:
-        print("ℹ️ Cần ít nhất 2 lần đánh giá để vẽ biểu đồ.")
-        return
-
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.sort_values("timestamp")
-
-    plt.figure(figsize=(10, 5))
-    plt.plot(df["timestamp"], df["wer"], label="WER", marker='o')
-    plt.plot(df["timestamp"], df["cer"], label="CER", marker='s')
-    plt.xlabel("Thời gian")
+    plt.figure(figsize=(10,5))
+    plt.plot(lengths, avg_wer, label="WER", marker='o')
+    plt.plot(lengths, avg_cer, label="CER", marker='x')
+    plt.xlabel("Chiều dài chuỗi (binned)")
     plt.ylabel("Tỉ lệ lỗi")
-    plt.title("📈 Biểu đồ WER / CER theo thời gian đánh giá")
+    plt.title("Biểu đồ WER/CER theo độ dài chuỗi")
     plt.legend()
     plt.grid(True)
-    plt.tight_layout()
-    plt.savefig("eval_plot.png")
-    print("📊 Đã lưu biểu đồ tại eval_plot.png ✅")
+    plt.savefig("length_vs_error.png")
+    print("✅ Đã lưu biểu đồ length_vs_error.png")
+
+    # ===== In top 10 mẫu sai nhiều nhất =====
+    print("\n📌 Top 10 mẫu sai nhiều nhất:")
+    errors = [jiwer.wer([gt], [pred]) for gt, pred in zip(gts_all, preds_all)]
+    sorted_indices = np.argsort(errors)[-10:][::-1]
+    for i in sorted_indices:
+        print(f"[{i}] GT: {gts_all[i]}")
+        print(f"     PR: {preds_all[i]}")
+        print(f"     WER: {errors[i]:.3f}\n")
+
+    return result
 
 # ========== MAIN ==========
 
 if __name__ == "__main__":
-    evaluate_model()
-    plot_eval_history()
+    evaluate_model(max_samples=1024)
