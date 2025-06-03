@@ -139,6 +139,20 @@ if __name__ == "__main__":
     print("✅ Đã lưu weights vào checkpoints/final_model.weights.h5")
 
     # Lưu mô hình full để export TFLite hoặc phục vụ inference sau này
-    tf.saved_model.save(ctc_model.model, "exported/full_model")
-    print("✅ Đã lưu mô hình dạng SavedModel vào exported/full_model")
+    dummy_input = tf.random.uniform((1, 1000, 128))
+    _ = ctc_model.model(dummy_input)
+    
+    # ✅ Lưu phần base model (để inference hoặc export TFLite sau này)
+    export_dir = "exported/full_model"
+    tf.saved_model.save(
+        ctc_model.model,
+        export_dir,
+        signatures={
+            "serving_default": ctc_model.model.call.get_concrete_function(
+                tf.TensorSpec(shape=[None, None, 128], dtype=tf.float32, name="input")
+            )
+        },
+    )
+    print(f"✅ Đã lưu mô hình ở dạng SavedModel tại: {export_dir}")
+
 

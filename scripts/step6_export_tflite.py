@@ -1,3 +1,5 @@
+# step6_export_tflite.py
+
 import tensorflow as tf
 import numpy as np
 import os
@@ -8,6 +10,7 @@ import logging
 from step3_model import build_ctc_transformer_model
 from step2_dataset import load_char2idx
 from step4_train import CTCModel
+
 
 def export_tflite():
     try:
@@ -23,7 +26,7 @@ def export_tflite():
         vocab_size = len(char2idx)
         print(f"✅ Vocabulary size: {vocab_size}")
 
-        # Build mô hình và load weights
+        # Khởi tạo mô hình gốc
         print("🧠 Khởi tạo mô hình...")
         base_model = build_ctc_transformer_model(
             input_dim=128,
@@ -33,34 +36,44 @@ def export_tflite():
             num_layers=4,
             ff_dim=256,
         )
-        model = CTCModel(base_model)
 
-        # Khởi tạo dummy input với shape cố định 112 frame
-        dummy_input = tf.ones((1, 112, 128), dtype=tf.float32)
-        _ = model(dummy_input, training=False)
+        # Gói base_model vào CTCModel để load đúng weights
+        ctc_model = CTCModel(base_model)
+
+        # Build model bằng dummy input
+        dummy_input = tf.random.uniform((1, 1000, 128), dtype=tf.float32)
+        _ = ctc_model(dummy_input, training=False)
 
         # Load weights
         model_path = "checkpoints/best_model.weights.h5"
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"❌ Không tìm thấy file weights: {model_path}")
-        model.load_weights(model_path)
+        ctc_model.load_weights(model_path)
         print(f"✅ Đã load weights từ: {model_path}")
 
-        # Tạo hàm concrete function với input shape cố định
+        # Lấy lại base_model để export
+        trained_base_model = ctc_model.model
+        inputs = trained_base_model.input
+        logits = trained_base_model.output
+        softmax_output = tf.keras.layers.Activation('softmax', name='softmax_output')(logits)
+        export_model = tf.keras.Model(inputs=inputs, outputs=softmax_output)
+
+        # Gọi model với dummy input để khởi tạo
+        _ = export_model(dummy_input, training=False)
+
+        # Tạo concrete function để export
         print("🔨 Tạo concrete function để export...")
-        @tf.function(input_signature=[tf.TensorSpec(shape=[1, 112, 128], dtype=tf.float32)])
+        @tf.function(input_signature=[tf.TensorSpec(shape=[1, 1000, 128], dtype=tf.float32)])
         def inference_fn(inputs):
-            logits = base_model(inputs, training=False)
-            return logits  # Chỉ trả về logits thô, không decode
+            return export_model(inputs, training=False)
 
         concrete_func = inference_fn.get_concrete_function()
 
         # Convert sang TFLite
         print("🔄 Đang chuyển đổi sang định dạng .tflite...")
         converter = tf.lite.TFLiteConverter.from_concrete_functions([concrete_func])
-        #converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        #converter._experimental_lower_tensor_list_ops = True
         converter.experimental_enable_resource_variables = False
+        # converter.optimizations = [tf.lite.Optimize.DEFAULT]  # Bật nếu cần
 
         tflite_model = converter.convert()
         print("✅ Chuyển đổi thành công!")
@@ -72,7 +85,7 @@ def export_tflite():
             f.write(tflite_model)
         print(f"💾 Mô hình đã được lưu tại: {tflite_path}")
 
-        # Kiểm tra lại model TFLite
+        # Kiểm tra lại mô hình TFLite
         interpreter = tf.lite.Interpreter(model_path=tflite_path)
         interpreter.allocate_tensors()
         print("🔍 Kiểm tra mô hình TFLite thành công.")
@@ -81,6 +94,7 @@ def export_tflite():
         print("❌ Gặp lỗi trong quá trình export:")
         traceback.print_exc()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     export_tflite()
