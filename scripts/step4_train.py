@@ -144,15 +144,8 @@ if __name__ == "__main__":
     
     # ✅ Lưu phần base model (để inference hoặc export TFLite sau này)
     export_dir = "exported/full_model"
-    tf.saved_model.save(
-        ctc_model.model,
-        export_dir,
-        signatures={
-            "serving_default": ctc_model.model.call.get_concrete_function(
-                tf.TensorSpec(shape=[None, None, 128], dtype=tf.float32, name="input")
-            )
-        },
-    )
+    tf.saved_model.save(ctc_model.model, export_dir)
     print(f"✅ Đã lưu mô hình ở dạng SavedModel tại: {export_dir}")
+
 
 
